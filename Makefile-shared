@@ -1,0 +1,41 @@
+EXECUTABLE := filter-shared
+
+SOURCES := $(EXECUTABLE).cu rf-time.cc ppm.cu utils.cu
+OBJS    := $(EXECUTABLE).o  rf-time.o ppm.o utils.o
+
+CUDAPATH     := /usr/local/cuda
+SDKPATH      := $(CUDAPATH)/SDK
+
+CC := gcc
+CXX := g++
+NVCC := $(CUDAPATH)/bin/nvcc
+
+# Usar este para arquitetura de 64 bits
+ARCHITECTURE := -L/usr/lib/nvidia-current -L$(CUDAPATH)/lib64
+# Usar este para arquitetura de 32 bits
+#ARCHITECTURE := -L/usr/lib32/nvidia-current -L$(CUDAPATH)/lib -lcutil_i386 -lcudpp_i386 
+
+LDFLAGS   := -L$(SDKPATH)/C/common/lib/linux -L$(SDKPATH)/shared/lib/linux -L$(SDKPATH)/C/lib $(ARCHITECTURE) -lcuda -lcudart
+CXFLAGS   := -I$(SDKPATH)/C/common/inc -I$(CUDAPATH)/include -I$(SDKPATH)/shared/inc -I$(SDKPATH)/C/common/inc -I./inc
+NVCCFLAGS := -arch compute_20
+#NVCCFLAGS := --compiler-bindir /usr/bin/gcc-4.3 -arch sm_11
+
+#$(EXECUTABLE): $(SOURCES)
+	#$(NVCC) $(NVCCFLAGS) $(LDFLAGS) $(CXFLAGS) -c $(SOURCES)
+	#$(CXX) $(LDFLAGS) $(CXFLAGS) -o $(EXECUTABLE) $(OBJS)
+
+$(EXECUTABLE): $(EXECUTABLE).cu
+	$(NVCC) $(NVCCFLAGS) $(LDFLAGS) $(CXFLAGS) -c $(SOURCES)
+	$(NVCC) $(NVCCFLAGS) $(LDFLAGS) $(CXFLAGS) -o $(EXECUTABLE) $(OBJS)
+
+depend:
+	$(CC) $(CXXFLAGS) -M *.cc > .depend
+
+clean:
+	rm -f *.o *~ .depend $(EXECUTABLE)
+
+all: clean depend $(EXECUTABLE)
+
+ifeq (.depend,$(wildcard .depend))
+include .depend
+endif
