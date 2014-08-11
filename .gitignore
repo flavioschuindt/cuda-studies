@@ -1,0 +1,3 @@
+filter/filter-shared
+filter/data/*
+*.o
