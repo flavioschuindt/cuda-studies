@@ -163,7 +163,7 @@ __global__ void filterGPU( unsigned char *image1,
 
 }
 
-__host__ void process_in_cuda(char *input_image, 
+__host__ double process_in_cuda(char *input_image, 
 							  int blSizeX, 
 							  int blSizeY,
 							  char *output_filename){
@@ -207,10 +207,6 @@ __host__ void process_in_cuda(char *input_image,
 	cudaThreadSynchronize();
 	gpu_time = get_clock_msec() - start_time;
 
-	// Imprime tempo
-	cout << "\n\n\n\t\t\tTempo de execucao da GPU: " << gpu_time << " ms\n" << endl;
-	cout << "\n--------------------------------------------------------------------------------------\n" << endl;
-
 	// Copia o resultado de volta para o host
 	CUDA_SAFE_CALL( cudaMemcpy( h_imagem_resultado, d_res, size, cudaMemcpyDeviceToHost ) );
 
@@ -224,6 +220,8 @@ __host__ void process_in_cuda(char *input_image,
 	// Libera memória do host
 	free( h_imagem );
 	free( h_imagem_resultado );
+
+	return gpu_time;
 
 }
 
@@ -243,7 +241,10 @@ __host__ int main( int argc, char *argv[] ) {
 	else if ( strcmp(argv[1], GPU) == 0)
 	{
 
-		process_in_cuda(argv[2], TILE_WIDTH, TILE_WIDTH, argv[3]);
+		double gpu_time = process_in_cuda(argv[2], TILE_WIDTH, TILE_WIDTH, argv[3]);
+		// Imprime tempo
+		cout << "\n\n\n\t\t\tTempo de execucao da GPU: " << gpu_time << " ms\n" << endl;
+		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
 
 	}
 	else if ( strcmp(argv[1], SSE) == 0)
