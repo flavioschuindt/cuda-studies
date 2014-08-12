@@ -172,9 +172,6 @@ __host__ double process_in_cuda(char *input_image,
 	unsigned char *h_imagem, *h_imagem_resultado;
 	double start_time, gpu_time;
 
-	cout << "\n--------------------------------------------------------------------------------------\n" << endl;
-	cout << " \n\t\t\t\t | Filtro utilizando GPU |\n" << endl;
-
 	// Lê a imagem para o buffer h_imagem de entrada
 	lerPPM( input_image, &h_imagem, &h_width, &h_height );
 
@@ -182,7 +179,7 @@ __host__ double process_in_cuda(char *input_image,
 
 	// Aloca buffer de resultado no host
 	if( ( h_imagem_resultado = (unsigned char *)malloc( size ) ) == NULL )
-		erro( "\nErro alocando imagem resultado.\n" );
+		erro( "\n[CUDA] Erro alocando imagem resultado.\n" );
 
 	// Aloca buffers de entrada para as duas imagens e buffer de saída para imagem de resultado no device
 	unsigned char *d_imagem = NULL;
@@ -198,8 +195,8 @@ __host__ double process_in_cuda(char *input_image,
 	int numBlocosY = h_height / blockSize.y + ( h_height % blockSize.y == 0 ? 0 : 1 );
 	dim3 gridSize( numBlocosX, numBlocosY, 1 );
 
-	cout << "\nBlocks: (" << blockSize.x << "," << blockSize.y << ")\n";
-	cout << "\nGrid: (" << gridSize.x << "," << gridSize.y << ")\n";
+	cout << "\n[CUDA] Blocks: (" << blockSize.x << "," << blockSize.y << ")\n";
+	cout << "\n[CUDA] Grid: (" << gridSize.x << "," << gridSize.y << ")\n";
 
 	// Chama kernel da GPU
 	start_time = get_clock_msec();
@@ -225,6 +222,65 @@ __host__ double process_in_cuda(char *input_image,
 
 }
 
+__host__ double process_in_cpu(char *input_image, 
+							  char *output_filename){
+
+	int width, height;
+	unsigned char *imagem, *imagem_resultado;
+	double start_time, cpu_time;
+
+	// Lê a imagem para o buffer h_imagem de entrada
+	lerPPM( input_image, &imagem, &width, &height );
+
+	int size = 3*width*height*sizeof( char );
+
+	// Aloca buffer de resultado
+	if( ( imagem_resultado = (unsigned char *)malloc( size ) ) == NULL )
+		erro( "\n[CPU] Erro alocando imagem resultado.\n" );
+
+	int i, j, k, idx;
+	float a1, a2, a3, a4; // Coeficientes para o filtro
+	int a, b, c, d, e; // a é o elemento corrente. b, c, d, e são os seus vizinhos 4-conectividade.
+
+	start_time = get_clock_msec();
+
+	for (i = 1; i < height-1; i++)
+	{
+		for (j = 1; j < width-1; j++)
+		{
+
+			idx = 3*ELEM(j, i, width);
+			for (k = 0; k < 3; k++)
+			{
+
+				a = imagem[ idx ];
+				b = imagem[idx-3];
+				c = imagem[idx-3*width];
+				d = imagem[idx+3];
+				e = imagem[idx+3*width];
+				
+				a1 = sqrt((float)((a-b)*(a-b)));
+				a2 = sqrt((float)((a-c)*(a-c)));
+				a3 = sqrt((float)((a-d)*(a-d)));
+				a4 = sqrt((float)((a-e)*(a-e)));
+
+				float sum = 1 + a1 + a2 + a3 + a4;
+				a = (a + a1*b + a2*c + a3*d + a4*e) / sqrt(sum*sum);
+
+				imagem_resultado[ idx++ ] = (unsigned char) a;
+
+			}
+		}
+	}
+	cpu_time = get_clock_msec() - start_time;
+
+	// Salva imagem resultado
+	salvaPPM( output_filename, imagem_resultado, width, height );
+
+	return cpu_time;
+
+}
+
 
 __host__ int main( int argc, char *argv[] ) {
 
@@ -236,14 +292,23 @@ __host__ int main( int argc, char *argv[] ) {
 
 	if ( strcmp(argv[1], CPU) == 0)
 	{
-		cout << " \nFiltro utilizando CPU\n" << endl;
+		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
+		cout << " \n\t\t\t\t[CPU] | Filtro utilizando CPU |\n" << endl;
+
+		double cpu_time = process_in_cpu(argv[2], argv[3]);
+
+		cout << "\n\n\n\t\t\t[CPU] Tempo de execucao da CPU (sem SSE): " << cpu_time << " ms\n" << endl;
+		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
 	}
 	else if ( strcmp(argv[1], GPU) == 0)
 	{
 
+		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
+		cout << " \n\t\t\t\t[CUDA] | Filtro utilizando GPU |\n" << endl;
+		
 		double gpu_time = process_in_cuda(argv[2], TILE_WIDTH, TILE_WIDTH, argv[3]);
-		// Imprime tempo
-		cout << "\n\n\n\t\t\tTempo de execucao da GPU: " << gpu_time << " ms\n" << endl;
+		
+		cout << "\n\n\n\t\t\t[CUDA] Tempo de execucao da GPU: " << gpu_time << " ms\n" << endl;
 		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
 
 	}
