@@ -1,4 +1,4 @@
-EXECUTABLE := filter-shared
+EXECUTABLE := filter
 
 SOURCES := $(EXECUTABLE).cu rf-time.cc ppm.cu utils.cu
 OBJS    := $(EXECUTABLE).o  rf-time.o ppm.o utils.o
