@@ -8,6 +8,7 @@ Filter folder contains a implementation of a generic (and with no useful utility
 Usage:
 
 make filter
+
 filter -{c,g,s,sm} <input_image> <output_image>
 
 -c: apply filter using only cpu
