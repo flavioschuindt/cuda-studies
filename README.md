@@ -3,7 +3,7 @@ cuda-studies
 
 General repository to study CUDA
 
-Filter folder contains a a implementation of a generic (and with no useful utility as far as i know) filter that applies some Euclidian distance in a 4-Connected Neighbourhood. It's a filter with a lot of multiplications, square roots, etc. just to make intense computing and compare results between cpu and cuda.
+Filter folder contains a implementation of a generic (and with no useful utility as far as i know) filter that applies some Euclidian distance in a 4-Connected Neighbourhood. It's a filter with a lot of multiplications, square roots, etc. just to make intense computing and compare results between cpu and cuda.
 
 Usage:
 
