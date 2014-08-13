@@ -341,7 +341,7 @@ __host__ int main( int argc, char *argv[] ) {
 
 	if( argc < 4 ) 
 	{
-		erro( "\nSyntaxe: filter -{c,g,s} input_image output_image\n" );
+		erro( "\nSyntaxe: filter -{c,g,s,sm} input_image output_image\n" );
 		return 0;
 	}
 
