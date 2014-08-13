@@ -12,9 +12,13 @@ make filter
 filter -{c,g,s,sm} <input_image> <output_image>
 
 -c: apply filter using only cpu
+
 -g: apply filter using CUDA
+
 -s: apply filter using cpu with SSE instructions
+
 -sm: apply filter using CUDA with Shared Memory
 
 input_image: ppm image to be processed
+
 output_image: ppm image to be saved
