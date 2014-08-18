@@ -27,7 +27,22 @@
 #define GPU_SHARED_MEM "-sm"
 #define SSE "-s"
 #define TILE_WIDTH 32
+#define NUM_THREADS 2 
 #define ELEM(i,j,DIMX_) ((i)+(j)*(DIMX_))
+
+/***************************************************************************************************
+	Structs
+***************************************************************************************************/
+
+struct thread_data {
+		unsigned int thread_id;
+		float *im1;
+		float *res;
+		int w;
+		int h;
+	};
+struct thread_data thread_data_array[NUM_THREADS];
+pthread_t thread_ptr[NUM_THREADS];
 
 /***************************************************************************************************
 	Functions
@@ -277,8 +292,60 @@ __host__ double process_in_cuda(char *input_image,
 
 }
 
+/*void* sse( void *threadarg ) {
+
+	int id, idx, limit;
+	__m128 m1, s;
+	float *imagem, *res;
+	int w, h;
+
+	s = _mm_setzero_ps(); // (0, 0, 0, 0)
+
+	struct thread_data *thread_pointer_data;
+	thread_pointer_data = (struct thread_data *)threadarg;
+
+	id = thread_pointer_data->thread_id;
+	imagem = thread_pointer_data->im1;
+	res = thread_pointer_data->res;
+	w = thread_pointer_data->w;
+	h = thread_pointer_data->h;
+
+	limit = (3*w*h / NB_THREADS) - 4;
+	int horizontal_upper_border_limit = 3*w;
+	int horizontal_bottom_border_limit = 3*w*h - w;
+	
+	for( int idx = id*limit ; idx < (id+1)*limit ; idx+=4 ) {
+		
+		if ( (idx >= horizontal_upper_border_limit) && (idx < horizontal_bottom_border_limit) )
+		{
+
+			m1 = _mm_load_ps(&imagem[idx]);
+
+			b = imagem[idx-3];
+			c = imagem[idx-3*width];
+			d = imagem[idx+3];
+			e = imagem[idx+3*width];
+			
+			a1 = sqrt((float)((a-b)*(a-b)));
+			a2 = sqrt((float)((a-c)*(a-c)));
+			a3 = sqrt((float)((a-d)*(a-d)));
+			a4 = sqrt((float)((a-e)*(a-e)));
+
+			float sum = 1 + a1 + a2 + a3 + a4;
+			a = (a + a1*b + a2*c + a3*d + a4*e) / sqrt(sum*sum);
+
+			imagem_resultado[ idx++ ] = (unsigned char) a;
+
+			s = _mm_mul_ps(_mm_add_ps(m1,m2), factor);
+			_mm_store_ps(&res[idx], s);
+		}
+	}
+	
+}*/
+
 __host__ double process_in_cpu(char *input_image, 
-							  char *output_filename){
+							  char *output_filename,
+							  int is_sse){
 
 	int width, height;
 	unsigned char *imagem, *imagem_resultado;
@@ -299,31 +366,53 @@ __host__ double process_in_cpu(char *input_image,
 
 	start_time = get_clock_msec();
 
-	for (i = 1; i < height-1; i++)
+	if (is_sse)
 	{
-		for (j = 1; j < width-1; j++)
-		{
+		/*for( int i = 0 ; i < NUM_THREADS ; i++ ) {
+			
+			thread_data_array[i].thread_id = i;
+			thread_data_array[i].im1 = input_image;
+			thread_data_array[i].res = imagem_resultado;
+			thread_data_array[i].w = width;
+			thread_data_array[i].h = height;
 
-			idx = 3*ELEM(j, i, width);
-			for (k = 0; k < 3; k++)
+			pthread_create( &thread_ptr[i], NULL, sse, (void *)&thread_data_array[i] );
+			
+		}*/
+
+		/* Wait for every thread to complete  */
+		/*for( int i = 0 ; i < NUM_THREADS ; i++ ) {
+			pthread_join(thread_ptr[i], NULL);
+		}*/
+	}
+	else
+	{
+		for (i = 1; i < height-1; i++)
+		{
+			for (j = 1; j < width-1; j++)
 			{
 
-				a = imagem[ idx ];
-				b = imagem[idx-3];
-				c = imagem[idx-3*width];
-				d = imagem[idx+3];
-				e = imagem[idx+3*width];
-				
-				a1 = sqrt((float)((a-b)*(a-b)));
-				a2 = sqrt((float)((a-c)*(a-c)));
-				a3 = sqrt((float)((a-d)*(a-d)));
-				a4 = sqrt((float)((a-e)*(a-e)));
+				idx = 3*ELEM(j, i, width);
+				for (k = 0; k < 3; k++)
+				{
 
-				float sum = 1 + a1 + a2 + a3 + a4;
-				a = (a + a1*b + a2*c + a3*d + a4*e) / sqrt(sum*sum);
+					a = imagem[ idx ];
+					b = imagem[idx-3];
+					c = imagem[idx-3*width];
+					d = imagem[idx+3];
+					e = imagem[idx+3*width];
+					
+					a1 = sqrt((float)((a-b)*(a-b)));
+					a2 = sqrt((float)((a-c)*(a-c)));
+					a3 = sqrt((float)((a-d)*(a-d)));
+					a4 = sqrt((float)((a-e)*(a-e)));
 
-				imagem_resultado[ idx++ ] = (unsigned char) a;
+					float sum = 1 + a1 + a2 + a3 + a4;
+					a = (a + a1*b + a2*c + a3*d + a4*e) / sqrt(sum*sum);
 
+					imagem_resultado[ idx++ ] = (unsigned char) a;
+
+				}
 			}
 		}
 	}
@@ -335,7 +424,6 @@ __host__ double process_in_cpu(char *input_image,
 	return cpu_time;
 
 }
-
 
 __host__ int main( int argc, char *argv[] ) {
 
@@ -350,7 +438,7 @@ __host__ int main( int argc, char *argv[] ) {
 		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
 		cout << " \n\t\t\t\t[CPU] | Filtro utilizando CPU |\n" << endl;
 
-		double cpu_time = process_in_cpu(argv[2], argv[3]);
+		double cpu_time = process_in_cpu(argv[2], argv[3], 0);
 
 		cout << "\n\n\n\t\t\t[CPU] Tempo de execucao da CPU (sem SSE): " << cpu_time << " ms\n" << endl;
 		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
@@ -381,7 +469,13 @@ __host__ int main( int argc, char *argv[] ) {
 	}
 	else if ( strcmp(argv[1], SSE) == 0)
 	{
-		cout << " Filtro utilizando SSE" << endl;
+		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
+		cout << " \n\t\t\t\t[MERGE SSE] | Filtro utilizando CPU SSE |\n" << endl;
+		
+		double cpu_time = process_in_cpu(argv[2], argv[3], 1);
+		
+		cout << "\n\n\n\t\t\t[MERGE SSE] Tempo de execucao da CPU (com SSE): " << cpu_time << " ms\n" << endl;
+		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
 	}
 	else
 	{
