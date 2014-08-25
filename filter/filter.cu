@@ -12,10 +12,17 @@
 #include <iostream>
 #include <iomanip>
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
 
 #include "rf-time.h"
 #include "utils.h"
 #include "ppm.h"
+extern "C" {
+	#include "sse.h"
+}
+#include "float-ppm.h"
 
 /***************************************************************************************************
 	Defines
@@ -292,101 +299,76 @@ __host__ double process_in_cuda(char *input_image,
 
 }
 
-/*void* sse( void *threadarg ) {
+void* sse( void *threadarg ) {
 
-	int id, idx, limit;
-	__m128 m1, s;
-	float *imagem, *res;
-	int w, h;
+	return do_sse(threadarg);
 
-	s = _mm_setzero_ps(); // (0, 0, 0, 0)
-
-	struct thread_data *thread_pointer_data;
-	thread_pointer_data = (struct thread_data *)threadarg;
-
-	id = thread_pointer_data->thread_id;
-	imagem = thread_pointer_data->im1;
-	res = thread_pointer_data->res;
-	w = thread_pointer_data->w;
-	h = thread_pointer_data->h;
-
-	limit = (3*w*h / NB_THREADS) - 4;
-	int horizontal_upper_border_limit = 3*w;
-	int horizontal_bottom_border_limit = 3*w*h - w;
-	
-	for( int idx = id*limit ; idx < (id+1)*limit ; idx+=4 ) {
-		
-		if ( (idx >= horizontal_upper_border_limit) && (idx < horizontal_bottom_border_limit) )
-		{
-
-			m1 = _mm_load_ps(&imagem[idx]);
-
-			b = imagem[idx-3];
-			c = imagem[idx-3*width];
-			d = imagem[idx+3];
-			e = imagem[idx+3*width];
-			
-			a1 = sqrt((float)((a-b)*(a-b)));
-			a2 = sqrt((float)((a-c)*(a-c)));
-			a3 = sqrt((float)((a-d)*(a-d)));
-			a4 = sqrt((float)((a-e)*(a-e)));
-
-			float sum = 1 + a1 + a2 + a3 + a4;
-			a = (a + a1*b + a2*c + a3*d + a4*e) / sqrt(sum*sum);
-
-			imagem_resultado[ idx++ ] = (unsigned char) a;
-
-			s = _mm_mul_ps(_mm_add_ps(m1,m2), factor);
-			_mm_store_ps(&res[idx], s);
-		}
-	}
-	
-}*/
+}
 
 __host__ double process_in_cpu(char *input_image, 
 							  char *output_filename,
 							  int is_sse){
 
-	int width, height;
+	int width, height, size;
 	unsigned char *imagem, *imagem_resultado;
+	float *imagem_sse, *imagem_sse_resultado;
 	double start_time, cpu_time;
-
-	// Lê a imagem para o buffer h_imagem de entrada
-	lerPPM( input_image, &imagem, &width, &height );
-
-	int size = 3*width*height*sizeof( char );
-
-	// Aloca buffer de resultado
-	if( ( imagem_resultado = (unsigned char *)malloc( size ) ) == NULL )
-		erro( "\n[CPU] Erro alocando imagem resultado.\n" );
-
 	int i, j, k, idx;
 	float a1, a2, a3, a4; // Coeficientes para o filtro
 	int a, b, c, d, e; // a é o elemento corrente. b, c, d, e são os seus vizinhos 4-conectividade.
 
-	start_time = get_clock_msec();
-
 	if (is_sse)
 	{
-		/*for( int i = 0 ; i < NUM_THREADS ; i++ ) {
+
+		readPPMinFloat( input_image, &imagem_sse, &width, &height );
+
+		size = 3*width*height*sizeof( float );
+
+		posix_memalign( (void **)&imagem_sse_resultado, 16, size );
+
+		if( imagem_sse_resultado == NULL ) {
+			printf( "[SSE] Erro alocando imagem resultado.\n" );
+			exit( 1 );
+		}
+
+		start_time = get_clock_msec();
+
+		for( int i = 0 ; i < NUM_THREADS ; i++ ) {
 			
 			thread_data_array[i].thread_id = i;
-			thread_data_array[i].im1 = input_image;
-			thread_data_array[i].res = imagem_resultado;
+			thread_data_array[i].im1 = imagem_sse;
+			thread_data_array[i].res = imagem_sse_resultado;
 			thread_data_array[i].w = width;
 			thread_data_array[i].h = height;
 
 			pthread_create( &thread_ptr[i], NULL, sse, (void *)&thread_data_array[i] );
 			
-		}*/
+		}
 
 		/* Wait for every thread to complete  */
-		/*for( int i = 0 ; i < NUM_THREADS ; i++ ) {
+		for( int i = 0 ; i < NUM_THREADS ; i++ ) {
 			pthread_join(thread_ptr[i], NULL);
-		}*/
+		}
+		cpu_time = get_clock_msec() - start_time;
+
+		// Salva imagem resultado
+		savePPMfromFloat( output_filename, imagem_sse_resultado, width, height );
+		free( imagem_sse );
+		free( imagem_sse_resultado );
 	}
 	else
 	{
+		// Lê a imagem para o buffer h_imagem de entrada
+		lerPPM( input_image, &imagem, &width, &height );
+
+		int size = 3*width*height*sizeof( char );
+
+		// Aloca buffer de resultado
+		if( ( imagem_resultado = (unsigned char *)malloc( size ) ) == NULL )
+			erro( "\n[CPU] Erro alocando imagem resultado.\n" );
+
+
+		start_time = get_clock_msec();
 		for (i = 1; i < height-1; i++)
 		{
 			for (j = 1; j < width-1; j++)
@@ -415,11 +397,14 @@ __host__ double process_in_cpu(char *input_image,
 				}
 			}
 		}
-	}
-	cpu_time = get_clock_msec() - start_time;
+		cpu_time = get_clock_msec() - start_time;
 
-	// Salva imagem resultado
-	salvaPPM( output_filename, imagem_resultado, width, height );
+		// Salva imagem resultado
+		salvaPPM( output_filename, imagem_resultado, width, height );
+		free( imagem );
+		free( imagem_resultado );
+	}
+	
 
 	return cpu_time;
 

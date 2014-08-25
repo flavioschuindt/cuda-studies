@@ -1,7 +1,9 @@
 EXECUTABLE := filter
 
 SOURCES := $(EXECUTABLE).cu rf-time.cc ppm.cu utils.cu
-OBJS    := $(EXECUTABLE).o  rf-time.o ppm.o utils.o
+C_SOURCES := sse.c
+
+OBJS    := $(EXECUTABLE).o  rf-time.o ppm.o utils.o sse.o
 
 CUDAPATH     := /usr/local/cuda
 SDKPATH      := $(CUDAPATH)/SDK
@@ -16,6 +18,7 @@ ARCHITECTURE := -L/usr/lib/nvidia-current -L$(CUDAPATH)/lib64
 #ARCHITECTURE := -L/usr/lib32/nvidia-current -L$(CUDAPATH)/lib -lcutil_i386 -lcudpp_i386 
 
 LDFLAGS   := -L$(SDKPATH)/C/common/lib/linux -L$(SDKPATH)/shared/lib/linux -L$(SDKPATH)/C/lib $(ARCHITECTURE) -lcuda -lcudart
+C_LDFLAGS := -msse -msse2 -msse3 -pthread -lm
 CXFLAGS   := -I$(SDKPATH)/C/common/inc -I$(CUDAPATH)/include -I$(SDKPATH)/shared/inc -I$(SDKPATH)/C/common/inc -I./inc
 NVCCFLAGS := -arch compute_20
 #NVCCFLAGS := --compiler-bindir /usr/bin/gcc-4.3 -arch sm_11
@@ -26,6 +29,7 @@ NVCCFLAGS := -arch compute_20
 
 $(EXECUTABLE): $(EXECUTABLE).cu
 	$(NVCC) $(NVCCFLAGS) $(LDFLAGS) $(CXFLAGS) -c $(SOURCES)
+	$(CC) $(C_LDFLAGS) -c C_SOURCES
 	$(NVCC) $(NVCCFLAGS) $(LDFLAGS) $(CXFLAGS) -o $(EXECUTABLE) $(OBJS)
 
 depend:
