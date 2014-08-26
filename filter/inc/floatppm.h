@@ -9,6 +9,6 @@
 
 void getPPMSize( char *fname, int *width, int *height ) ;
 void savePPMfromFloat( char *fname, float *buffer, int width, int height ) ;
-void readPPMinFloat( char *fname, float **buffer, int *width, int *height )
+void readPPMinFloat( char *fname, float **buffer, int *width, int *height );
 
 #endif

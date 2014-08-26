@@ -19,10 +19,12 @@
 #include "rf-time.h"
 #include "utils.h"
 #include "ppm.h"
+#include "floatppm.h"
+#include "types.h"
 extern "C" {
 	#include "sse.h"
 }
-#include "float-ppm.h"
+
 
 /***************************************************************************************************
 	Defines
@@ -41,13 +43,6 @@ extern "C" {
 	Structs
 ***************************************************************************************************/
 
-struct thread_data {
-		unsigned int thread_id;
-		float *im1;
-		float *res;
-		int w;
-		int h;
-	};
 struct thread_data thread_data_array[NUM_THREADS];
 pthread_t thread_ptr[NUM_THREADS];
 
@@ -301,7 +296,7 @@ __host__ double process_in_cuda(char *input_image,
 
 void* sse( void *threadarg ) {
 
-	return do_sse(threadarg);
+	return do_sse(threadarg, NUM_THREADS);
 
 }
 

@@ -7,6 +7,6 @@
 #ifndef SSE_H_
 #define SSE_H_
 
-void* do_sse(void *threadarg);
+void* do_sse(void *threadarg, int num_threads);
 
 #endif
