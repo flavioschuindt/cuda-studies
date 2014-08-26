@@ -15,7 +15,7 @@ NVCC := $(CUDAPATH)/bin/nvcc
 # Usar este para arquitetura de 64 bits
 ARCHITECTURE := -L/usr/lib/nvidia-current -L$(CUDAPATH)/lib64
 # Usar este para arquitetura de 32 bits
-#ARCHITECTURE := -L/usr/lib32/nvidia-current -L$(CUDAPATH)/lib -lcutil_i386 -lcudpp_i386 
+#ARCHITECTURE := -L/usr/lib/nvidia-current -L$(CUDAPATH)/lib -lcutil_i386
 
 LDFLAGS   := -L$(SDKPATH)/C/common/lib/linux -L$(SDKPATH)/shared/lib/linux -L$(SDKPATH)/C/lib $(ARCHITECTURE) -lcuda -lcudart
 C_LDFLAGS := -msse -msse2 -msse3 -pthread -lm -I./inc
