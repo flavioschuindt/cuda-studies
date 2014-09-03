@@ -5,10 +5,13 @@
 
 void* do_sse(void *threadarg, int num_threads)
 {
-	/*int id, idx, limit;
-	__m128 m1, s;
+	int id, idx, limit;
+	__m128 elements_vector, current_element_vector, s, aux;
 	float *imagem, *res;
 	int w, h;
+	float elements[4];
+	float current_element[4];
+	float numerator_sum, denominator_sum;
 
 	s = _mm_setzero_ps(); // (0, 0, 0, 0)
 
@@ -21,40 +24,41 @@ void* do_sse(void *threadarg, int num_threads)
 	w = thread_pointer_data->w;
 	h = thread_pointer_data->h;
 
-	limit = (3*w*h / num_threads) - 4;
-	int horizontal_upper_border_limit = 3*w;
-	int horizontal_bottom_border_limit = 3*w*h - w;
-
-	// Coeficientes para o filtro
-	float a1, a2, a3, a4;
-
-	// a é o elemento corrente. b, c, d, e são os seus vizinhos 4-conectividade.
-	float a, b, c, d, e;
+	limit = 3*w*h / num_threads;
 	
-	for( idx = id*limit ; idx < (id+1)*limit ; idx+=4 ) {
-		
-		if ( (idx >= horizontal_upper_border_limit) && (idx < horizontal_bottom_border_limit) )
-		{
+	for( idx = id*limit ; idx < (id+1)*limit ; idx++ ) {
 
-			m1 = _mm_load_ps(&imagem[idx]);
+			elements[0] = imagem[idx-3];
+			elements[1] = imagem[idx-3*w];
+			elements[2] = imagem[idx+3];
+			elements[3] = imagem[idx+3*w];
 
-			b = imagem[idx-3];
-			c = imagem[idx-3*w];
-			d = imagem[idx+3];
-			e = imagem[idx+3*w];
+			current_element[0] = imagem[idx];
+			current_element[1] = imagem[idx];
+			current_element[2] = imagem[idx];
+			current_element[3] = imagem[idx];
+
+			elements_vector = _mm_load_ps(&elements[0]);
+			current_element_vector = _mm_load_ps(&current_element[0]);
+
+			s = _mm_sub_ps(current_element_vector, elements_vector);
+			s = _mm_mul_ps(s, s);
+
+			aux = _mm_hadd_ps(s, s);      // sum horizontally
+			aux = _mm_hadd_ps(aux, aux);  // (NB: need to do this twice to sum all 4 elements)*/
+			/*aux = _mm_add_ps(s, _mm_movehl_ps(s, s));
+			__m128 sumxx = _mm_add_ss(aux, _mm_shuffle_ps(aux, aux, 1));*/
+			_mm_store_ss(&denominator_sum, aux); 
+			denominator_sum += 1.0;
+
+			aux = _mm_mul_ps(s, elements_vector);
+			aux = _mm_hadd_ps(aux, aux);   // sum horizontally
+			aux = _mm_hadd_ps(aux, aux);  // (NB: need to do this twice to sum all 4 elements)
+			/*aux = _mm_add_ps(aux, _mm_movehl_ps(aux, aux));
+			sumxx = _mm_add_ss(aux, _mm_shuffle_ps(aux, aux, 1));*/
+			_mm_store_ss(&numerator_sum, aux);
+			numerator_sum += imagem[ idx ]; 
 			
-			a1 = sqrt(((a-b)*(a-b)));
-			a2 = sqrt(((a-c)*(a-c)));
-			a3 = sqrt(((a-d)*(a-d)));
-			a4 = sqrt(((a-e)*(a-e)));
-
-			float sum = 1 + a1 + a2 + a3 + a4;
-			a = (a + a1*b + a2*c + a3*d + a4*e) / sqrt(sum*sum);
-
-			res[ idx++ ] = (unsigned char) a;
-
-			s = _mm_mul_ps(_mm_add_ps(m1,m2), factor);
-			_mm_store_ps(&res[idx], s);
-		}
-	}*/
+			imagem[ idx ] = numerator_sum / sqrt(denominator_sum * denominator_sum);
+	}
 }
