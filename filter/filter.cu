@@ -22,7 +22,7 @@
 #include "floatppm.h"
 #include "types.h"
 extern "C" {
-	#include "sse.h"
+#include "sse.h"
 }
 
 
@@ -31,11 +31,13 @@ extern "C" {
 ***************************************************************************************************/
 #define CUDA_SAFE_CALL
 
-#define CPU "-c"
-#define GPU "-g"
+#define CPU "-cpu"
+#define GPU1 "-gpu1"
+#define GPU3 "-gpu3"
+#define GPUT "-gputransfer"
 #define GPU_SHARED_MEM "-sm"
-#define SSE "-s"
-#define TILE_WIDTH 32
+#define SSE "-sse"
+#define TILE_WIDTH 16
 #define NUM_THREADS 2 
 #define ELEM(i,j,DIMX_) ((i)+(j)*(DIMX_))
 
@@ -55,9 +57,9 @@ using namespace std;
 /**************************************************************************************************/
 
 __global__ void filter_gpu_sharedmem( unsigned char *image,
-						   unsigned char *res, 
-						   int width, 
-						   int height ){
+				      unsigned char *res, 
+				      int width, 
+				      int height ){
 
 	__shared__ unsigned char tile[TILE_WIDTH*TILE_WIDTH*3];
 
@@ -181,10 +183,11 @@ __global__ void filter_gpu_sharedmem( unsigned char *image,
 
 }
 
-__global__ void filter_gpu( unsigned char *image, 
-						   unsigned char *res, 
-						   int width, 
-						   int height ){
+
+__global__ void filter_gpu_3p_thread( unsigned char *image, 
+			    unsigned char *res, 
+			    int width, 
+			    int height ){
 
 
 	// Calcula o índice da imagem de entrada
@@ -215,7 +218,7 @@ __global__ void filter_gpu( unsigned char *image,
 			a4 = sqrt((float)((a-e)*(a-e)));
 
 			float sum = 1 + a1 + a2 + a3 + a4;
-			a = (a + a1*b + a2*c + a3*d + a4*e) / sqrt(sum*sum);
+			a = (int)( (a + a1*b + a2*c + a3*d + a4*e) / sqrt(sum*sum) );
 
 			res[ idx++ ] = (unsigned char) a;
 
@@ -224,11 +227,76 @@ __global__ void filter_gpu( unsigned char *image,
 
 }
 
+
+__global__ void filter_gpu_1p_thread( unsigned char *image, 
+				      unsigned char *res, 
+				      int width, 
+				      int height ){
+	
+	
+	// Calcula o índice da imagem de entrada
+	int i = threadIdx.x + blockIdx.x*blockDim.x;
+	int j = threadIdx.y + blockIdx.y*blockDim.y;
+	
+	// Coeficientes para o filtro
+	float a1, a2, a3, a4;
+
+	// a é o elemento corrente. b, c, d, e são os seus vizinhos 4-conectividade.
+	int center, left, top, right, bottom;
+
+	if( (i > 2 && i < width-3) && (j > 0 && j < height-1) )
+	{
+		int idx = ELEM( i, j, width );
+		
+		center = image[idx      ];
+		left   = image[idx-3    ];
+		top    = image[idx-width];
+		right  = image[idx+3    ];
+		bottom = image[idx+width];
+		
+		a1 = sqrt((float)((center-left  )*(center-left  )));
+		a2 = sqrt((float)((center-top   )*(center-top   )));
+		a3 = sqrt((float)((center-right )*(center-right )));
+		a4 = sqrt((float)((center-bottom)*(center-bottom)));
+		
+		float sum = 1 + a1 + a2 + a3 + a4;
+		center = (int)( (center + a1*left + a2*top + a3*right + a4*bottom) / sqrt(sum*sum) );
+		
+		res[ idx ] = (unsigned char)center;
+		
+	}
+
+}
+
+
+__global__ void gpu_transfer( unsigned char *image, 
+			      unsigned char *res, 
+			      int width, 
+			      int height ){
+	
+	
+	// Calcula o índice da imagem de entrada
+	int i = threadIdx.x + blockIdx.x*blockDim.x;
+	int j = threadIdx.y + blockIdx.y*blockDim.y;
+	
+	if( (i < width && j < height) )
+	{
+		int idx = ELEM( i, j, width );
+		res[idx] = image[idx];
+	}
+	
+}
+
+
 __host__ double process_in_cuda(char *input_image, 
-							  int blSizeX, 
-							  int blSizeY,
-							  char *output_filename,
-							  int is_sharedmem){
+				int blSizeX, 
+				int blSizeY,
+				char *output_filename,
+				int version){
+
+	// Where version -> 0=sharedmem, 1=gpu3, 2=gpu1
+	// gpu3 -> Each thread processes three channels (r,g,b)
+	// gpu1 -> Each thread processes one channel
 
 	int h_width, h_height;
 	unsigned char *h_imagem, *h_imagem_resultado;
@@ -237,7 +305,7 @@ __host__ double process_in_cuda(char *input_image,
 	// Lê a imagem para o buffer h_imagem de entrada
 	lerPPM( input_image, &h_imagem, &h_width, &h_height );
 
-	int size = 3*h_width*h_height*sizeof( char );
+	int size = 3*h_width*h_height*sizeof( unsigned char );
 
 	// Aloca buffer de resultado no host
 	if( ( h_imagem_resultado = (unsigned char *)malloc( size ) ) == NULL )
@@ -251,29 +319,51 @@ __host__ double process_in_cuda(char *input_image,
 	unsigned char *d_res = NULL;
 	CUDA_SAFE_CALL( cudaMalloc( (void**)&d_res, size ) );
 
-	// Calcula dimensoes da grid e dos blocos
-	dim3 blockSize( blSizeX, blSizeY );
-	int numBlocosX = h_width  / blockSize.x + ( h_width  % blockSize.x == 0 ? 0 : 1 );
-	int numBlocosY = h_height / blockSize.y + ( h_height % blockSize.y == 0 ? 0 : 1 );
-	dim3 gridSize( numBlocosX, numBlocosY, 1 );
+	if( version < 2 ) {
+		
+		// Calcula dimensoes da grid e dos blocos
+		dim3 blockSize( blSizeX, blSizeY );
+		int numBlocosX = h_width  / blockSize.x + ( h_width  % blockSize.x == 0 ? 0 : 1 );
+		int numBlocosY = h_height / blockSize.y + ( h_height % blockSize.y == 0 ? 0 : 1 );
+		dim3 gridSize( numBlocosX, numBlocosY, 1 );
+		
+		cout << "\n[CUDA] Blocks: (" << blockSize.x << "," << blockSize.y << ")\n";
+		cout << "\n[CUDA] Grid: (" << gridSize.x << "," << gridSize.y << ")\n";
+		
+		if (version == 0)
+		{
+			start_time = get_clock_msec();
+			filter_gpu_sharedmem<<< gridSize, blockSize >>>( d_imagem, d_res, h_width, h_height  );
+			cudaThreadSynchronize();
+			gpu_time = get_clock_msec() - start_time;
+		}
+		else
+		{
+			start_time = get_clock_msec();
+			filter_gpu_3p_thread<<< gridSize, blockSize >>>( d_imagem, d_res, h_width, h_height  );
+			cudaThreadSynchronize();
+			gpu_time = get_clock_msec() - start_time;
+		}
+		
+	} else {
 
-	cout << "\n[CUDA] Blocks: (" << blockSize.x << "," << blockSize.y << ")\n";
-	cout << "\n[CUDA] Grid: (" << gridSize.x << "," << gridSize.y << ")\n";
-
-	if (is_sharedmem)
-	{
-		// Chama kernel da GPU
+		// Calcula dimensoes da grid e dos blocos
+		dim3 blockSize( blSizeX, blSizeY );
+		int numBlocosX = 3*h_width  / blockSize.x + ( (3*h_width)  % blockSize.x == 0 ? 0 : 1 );
+		int numBlocosY = h_height / blockSize.y + ( h_height % blockSize.y == 0 ? 0 : 1 );
+		dim3 gridSize( numBlocosX, numBlocosY, 1 );
+		
+		cout << "\n[CUDA] Blocks: (" << blockSize.x << "," << blockSize.y << ")\n";
+		cout << "\n[CUDA] Grid: (" << gridSize.x << "," << gridSize.y << ")\n";
+		
 		start_time = get_clock_msec();
-		filter_gpu_sharedmem<<< gridSize, blockSize >>>( d_imagem, d_res, h_width, h_height  );
+		if( version == 2 )
+			filter_gpu_1p_thread<<< gridSize, blockSize >>>( d_imagem, d_res, 3*h_width, h_height  );
+		else
+			gpu_transfer<<< gridSize, blockSize >>>( d_imagem, d_res, 3*h_width, h_height  );
 		cudaThreadSynchronize();
 		gpu_time = get_clock_msec() - start_time;
-	}
-	else
-	{
-		start_time = get_clock_msec();
-		filter_gpu<<< gridSize, blockSize >>>( d_imagem, d_res, h_width, h_height  );
-		cudaThreadSynchronize();
-		gpu_time = get_clock_msec() - start_time;
+		
 	}
 
 	// Copia o resultado de volta para o host
@@ -301,8 +391,8 @@ void* sse( void *threadarg ) {
 }
 
 __host__ double process_in_cpu(char *input_image, 
-							  char *output_filename,
-							  int is_sse){
+			       char *output_filename,
+			       int is_sse){
 
 	int width, height, size;
 	unsigned char *imagem, *imagem_resultado;
@@ -409,7 +499,7 @@ __host__ int main( int argc, char *argv[] ) {
 
 	if( argc < 4 ) 
 	{
-		erro( "\nSyntaxe: filter -{c,g,s,sm} input_image output_image\n" );
+		erro( "\nSyntaxe: filter -{cpu,gpu1,gpu3,sse,sm} input_image output_image\n" );
 		return 0;
 	}
 
@@ -429,19 +519,43 @@ __host__ int main( int argc, char *argv[] ) {
 		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
 		cout << " \n\t\t\t\t[CUDA] | Filtro utilizando GPU com Shared Memory |\n" << endl;
 		
-		double gpu_time = process_in_cuda(argv[2], TILE_WIDTH, TILE_WIDTH, argv[3], 1);
+		double gpu_time = process_in_cuda(argv[2], TILE_WIDTH, TILE_WIDTH, argv[3], 0);
 		
 		cout << "\n\n\n\t\t\t[CUDA] Tempo de execucao da GPU com Shared Memory: " << gpu_time << " ms\n" << endl;
 		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
 
 	}
-	else if ( strcmp(argv[1], GPU) == 0)
+	else if ( strcmp(argv[1], GPU3) == 0)
 	{
 
 		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
-		cout << " \n\t\t\t\t[CUDA] | Filtro utilizando GPU |\n" << endl;
+		cout << " \n\t\t\t\t[CUDA] | Filtro utilizando GPU 3/1|\n" << endl;
 		
-		double gpu_time = process_in_cuda(argv[2], TILE_WIDTH, TILE_WIDTH, argv[3], 0);
+		double gpu_time = process_in_cuda(argv[2], TILE_WIDTH, TILE_WIDTH, argv[3], 1);
+		
+		cout << "\n\n\n\t\t\t[CUDA] Tempo de execucao da GPU: " << gpu_time << " ms\n" << endl;
+		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
+
+	}
+	else if ( strcmp(argv[1], GPU1) == 0)
+	{
+
+		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
+		cout << " \n\t\t\t\t[CUDA] | Filtro utilizando GPU 1/1|\n" << endl;
+		
+		double gpu_time = process_in_cuda(argv[2], TILE_WIDTH, TILE_WIDTH, argv[3], 2);
+		
+		cout << "\n\n\n\t\t\t[CUDA] Tempo de execucao da GPU: " << gpu_time << " ms\n" << endl;
+		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
+
+	}
+	else if ( strcmp(argv[1], GPUT) == 0)
+	{
+
+		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
+		cout << " \n\t\t\t\t[CUDA] | Transferencia utilizando GPU |\n" << endl;
+		
+		double gpu_time = process_in_cuda(argv[2], TILE_WIDTH, TILE_WIDTH, argv[3], 3);
 		
 		cout << "\n\n\n\t\t\t[CUDA] Tempo de execucao da GPU: " << gpu_time << " ms\n" << endl;
 		cout << "\n--------------------------------------------------------------------------------------\n" << endl;
