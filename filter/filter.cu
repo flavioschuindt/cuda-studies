@@ -386,7 +386,7 @@ __host__ double process_in_cuda(char *input_image,
 
 void* sse( void *threadarg ) {
 
-	return do_sse(threadarg, NUM_THREADS);
+	return do_sse_v2(threadarg, NUM_THREADS);
 
 }
 
