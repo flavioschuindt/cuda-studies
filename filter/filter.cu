@@ -38,7 +38,7 @@ extern "C" {
 #define GPU_SHARED_MEM "-sm"
 #define SSE "-sse"
 #define TILE_WIDTH 16
-#define NUM_THREADS 2 
+#define NUM_THREADS 16
 #define ELEM(i,j,DIMX_) ((i)+(j)*(DIMX_))
 
 /***************************************************************************************************

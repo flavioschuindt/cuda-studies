@@ -71,7 +71,7 @@ void* do_sse(void *threadarg, int num_threads)
 void* do_sse_v2(void *threadarg, int num_threads)
 {
 	__m128 current_element, left, top, right, bottom, numerator, denominator, a1, a2, a3, a4, aux;
-	int id, w, h, limit, idx, i;
+	int id, w, h, limit, idx, i, line_offset, width_limit;
 	float *imagem, *res;
 	float rgb[4];
 	float numerator_values[4];
@@ -90,10 +90,17 @@ void* do_sse_v2(void *threadarg, int num_threads)
 	limit = 3*w*h / num_threads;
 	numerator = _mm_setzero_ps(); // (0, 0, 0, 0)
 	denominator = _mm_setzero_ps(); // (0, 0, 0, 0)
-	
+
+	width_limit = 3*w;
 	for( idx = id*limit ; idx < (id+1)*limit ; idx+=3 ) 
 	{
-		if ( idx >= 3*w && idx < 3*w*(h-1) && idx % (3*w) != 0 && idx % (3*w-1) != 0)
+		line_offset =  idx / width_limit;
+		if (
+			idx >= width_limit &&
+			idx < width_limit*(h-1) &&
+			idx % (width_limit) != 0 &&
+			idx != (line_offset*(width_limit) + (width_limit-3))
+			)
 		{
 			// Current element
 			rgb[0] = imagem[ idx ]; // Red
@@ -160,14 +167,12 @@ void* do_sse_v2(void *threadarg, int num_threads)
 			denominator = _mm_sqrt_ps(_mm_mul_ps(sum, sum)); //sqrt(sum*sum)
 
 			_mm_store_ps (numerator_values, numerator);
-			_mm_store_ps (denominator_values, numerator);
+			_mm_store_ps (denominator_values, denominator);
 
 			for (i=0; i<3; i++)
 			{
 	    		res[ idx+i ] = numerator_values[i] / denominator_values[i];
 	    	}
-
-
 		}
 	}
 	
